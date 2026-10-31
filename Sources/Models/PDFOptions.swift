@@ -98,7 +98,13 @@ struct PDFOptions: Equatable {
     var dpi: Int = 300
 
     /// 输出文件名（不含 .pdf 后缀的清理在 sanitizedFileName 里做）
-    var fileName: String = "我的照片"
+    var fileName: String = PDFOptions.defaultFileName
+
+    /// 渲染缩略图 / PDF 时使用的滤镜（原图 / 增强 / 黑白 / 灰度）
+    var filter: ScanFilter = .original
+
+    /// 默认文件名：用来判断用户有没有改过（扫描时才会自动改成「扫描_时间」）
+    static let defaultFileName = "我的照片"
 
     // MARK: - 派生信息
 
@@ -107,7 +113,7 @@ struct PDFOptions: Equatable {
         let invalid = CharacterSet(charactersIn: "/\\:*?\"<>|\n\r\t")
         let cleaned = fileName.components(separatedBy: invalid).joined()
         let trimmed = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "我的照片" : trimmed
+        return trimmed.isEmpty ? PDFOptions.defaultFileName : trimmed
     }
 
     /// 导出时使用的完整文件名
@@ -117,6 +123,10 @@ struct PDFOptions: Equatable {
 
     /// 底部状态栏用的一行摘要
     var summaryText: String {
-        "\(pageSize.title) · \(orientation.title) · \(dpi) DPI"
+        var parts = ["\(pageSize.title) · \(orientation.title) · \(dpi) DPI"]
+        if filter != .original {
+            parts.append(filter.title)
+        }
+        return parts.joined(separator: " · ")
     }
 }

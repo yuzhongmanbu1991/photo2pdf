@@ -50,7 +50,24 @@ struct SettingsView: View {
                 } header: {
                     Text("页边距")
                 } footer: {
-                    Text("页边距是照片四周的白色留白。打印装订建议用「标准」。")
+                    Text("页边距是照片四周的白色留白。打印装订建议用「标准」；扫描件一般用「无边距」。")
+                }
+
+                Section {
+                    Picker("滤镜", selection: $options.filter) {
+                        ForEach(ScanFilter.allCases) { filter in
+                            Text(filter.title).tag(filter)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    Text(options.filter.detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } header: {
+                    Text("扫描增强（滤镜）")
+                } footer: {
+                    Text("「增强 / 黑白」会让纸张更白、文字更黑，效果接近扫描 App；缩略图与最终 PDF 都按这里的选择渲染。扫描进来的页面默认使用「增强」。")
                 }
 
                 Section {

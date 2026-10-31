@@ -114,7 +114,9 @@ actor PDFRenderer {
             try Task.checkCancellation()
 
             // 逐页解码；失败就跳过这一页，不影响其它照片
-            guard let image = loadPageImage(plan: plan, quality: options.jpegQuality) else {
+            guard let image = loadPageImage(plan: plan,
+                                           quality: options.jpegQuality,
+                                           filter: options.filter) else {
                 skipped += 1
                 progress(0.02 + 0.96 * Double(index + 1) / Double(total))
                 continue
@@ -262,8 +264,9 @@ actor PDFRenderer {
 
     // MARK: - 解码 & 绘制
 
-    /// 只解码这一页需要的那点像素，避免整张大图进内存
-    private func loadPageImage(plan: PagePlan, quality: Double) -> CGImage? {
+    /// 只解码这一页需要的那点像素，避免整张大图进内存；
+    /// 然后按用户选择的滤镜处理（原图则直接返回），最后按需重新压成 JPEG。
+    private func loadPageImage(plan: PagePlan, quality: Double, filter: ScanFilter) -> CGImage? {
         let sourceOptions: [CFString: Any] = [kCGImageSourceShouldCache: false]
         guard let source = CGImageSourceCreateWithURL(plan.source.fileURL as CFURL,
                                                       sourceOptions as CFDictionary) else {
@@ -274,18 +277,26 @@ actor PDFRenderer {
             return nil
         }
 
+        // 扫描滤镜：在降采样之后、JPEG 压缩之前处理，既省内存又能让 JPEG 存下处理后的像素
+        let processed: CGImage
+        if filter == .original {
+            processed = decoded
+        } else {
+            processed = ImageEnhancer.apply(filter, to: decoded) ?? decoded
+        }
+
         // 质量 < 1 时重新压成 JPEG：PDF 会以 JPEG 形式内嵌，文件体积明显更小。
         // 质量 = 1 时保留无损编码，画质优先。
-        guard quality < 0.999 else { return decoded }
+        guard quality < 0.999 else { return processed }
 
-        let image = UIImage(cgImage: decoded)
+        let image = UIImage(cgImage: processed)
         let decodeOptions: [CFString: Any] = [kCGImageSourceShouldCacheImmediately: true]
         guard let jpegData = image.jpegData(compressionQuality: CGFloat(quality)),
               let jpegSource = CGImageSourceCreateWithData(jpegData as CFData, nil),
               let recompressed = CGImageSourceCreateImageAtIndex(jpegSource,
                                                                 0,
                                                                 decodeOptions as CFDictionary) else {
-            return decoded
+            return processed
         }
         return recompressed
     }

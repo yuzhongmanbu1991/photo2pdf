@@ -18,6 +18,10 @@ struct GeneratedPDF: Identifiable {
     let skippedCount: Int
     let suggestedFileName: String
     let createdAt: Date
+    /// 生成这份 PDF 用的原图清单（OCR 识别文字时要用同一批页面）
+    let sources: [PDFPhotoSource]
+    /// 生成这份 PDF 时的页面设置（含滤镜）
+    let options: PDFOptions
 
     var byteCountText: String {
         ByteCountFormatter.string(fromByteCount: Int64(data.count), countStyle: .file)
@@ -63,7 +67,7 @@ final class PDFGenerationController: ObservableObject {
                     }
                 }
                 await MainActor.run {
-                    self?.finish(renderResult: renderResult, options: options)
+                    self?.finish(renderResult: renderResult, options: options, sources: sources)
                 }
             } catch is CancellationError {
                 await MainActor.run {
@@ -101,7 +105,7 @@ final class PDFGenerationController: ObservableObject {
 
     // MARK: - 内部
 
-    private func finish(renderResult: PDFRenderResult, options: PDFOptions) {
+    private func finish(renderResult: PDFRenderResult, options: PDFOptions, sources: [PDFPhotoSource]) {
         defer { workTask = nil }
 
         // 写到临时目录，供「分享」和「文件」使用
@@ -123,7 +127,9 @@ final class PDFGenerationController: ObservableObject {
                               pageCount: renderResult.pageCount,
                               skippedCount: renderResult.skippedCount,
                               suggestedFileName: options.pdfFileName,
-                              createdAt: Date())
+                              createdAt: Date(),
+                              sources: sources,
+                              options: options)
         progress = 1
         phase = .finished
     }

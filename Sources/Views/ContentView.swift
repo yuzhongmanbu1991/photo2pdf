@@ -3,8 +3,10 @@
 //  照片转PDF
 //
 //  主界面：照片网格 + 排序/旋转/删除 + 底部生成按钮。
-//  照片选择用系统 PHPicker（iOS 14+ API，iOS 15 可用的 MultiPhotoPicker 桥接），
-//  不需要相册权限，也不会读到你不想给的照片。
+//  两个入口并列：
+//    * 「扫描」——相机拍纸质文档（VisionKit，真机可用，自动找边 + 透视校正）
+//    * 「照片」——从相册多选（PHPicker，不需要相册权限）
+//  两者导入后都进入同一套网格 / 排序 / 旋转 / 生成 PDF 流程。
 //
 
 import SwiftUI
@@ -15,13 +17,21 @@ struct ContentView: View {
     @EnvironmentObject private var store: PhotoStore
     @StateObject private var generator = PDFGenerationController()
 
-    /// 是否正在显示相册选择器（PHPicker）
-    @State private var showPicker = false
+    /// 当前要弹出的面板（用一个 enum 统一管理，避免同一视图挂多个 .sheet 在 iOS 15 上互相抢占）
+    private enum ActiveSheet: Int, Identifiable {
+        case settings
+        case generator
+        case picker
+
+        var id: Int { rawValue }
+    }
+
+    @State private var activeSheet: ActiveSheet?
+    /// 是否正在显示相机扫描（VisionKit）
+    @State private var showScanner = false
     /// 正在拖动的那张（用于拖动排序）
     @State private var draggingItem: PhotoItem?
 
-    @State private var showSettings = false
-    @State private var showGenerator = false
     @State private var showClearConfirm = false
 
     private let columns = [GridItem(.adaptive(minimum: 104, maximum: 168), spacing: 12)]
@@ -29,6 +39,11 @@ struct ContentView: View {
     /// 还能再加几张（选择器的多选上限跟着这个走）
     private var remainingSlots: Int {
         max(PhotoStore.maxPhotoCount - store.photos.count, 0)
+    }
+
+    /// 当前设备能不能用相机扫描（模拟器为 false）
+    private var scannerAvailable: Bool {
+        DocumentScanner.isSupported
     }
 
     var body: some View {
@@ -42,28 +57,48 @@ struct ContentView: View {
             .navigationBarTitleDisplayMode(.large)
             .toolbar { toolbarContent }
             .safeAreaInset(edge: .bottom) { bottomBar }
-            .sheet(isPresented: $showSettings) {
-                SettingsView(options: $store.options)
-            }
-            .sheet(isPresented: $showGenerator, onDismiss: {
-                generator.reset()
-            }) {
-                GeneratorFlowView(controller: generator)
-            }
-            .sheet(isPresented: $showPicker) {
-                // PHPicker 自带界面：全屏铺开，选完（或取消）回调里关掉 sheet
-                MultiPhotoPicker(selectionLimit: remainingSlots) { results in
-                    showPicker = false
-                    guard !results.isEmpty else { return }
-                    Task { await store.addPhotos(from: results) }
+            .sheet(item: $activeSheet, onDismiss: {
+                // 生成流程关闭后复位状态机（其它面板关闭时也会走这里，复位是幂等的）
+                if generator.result != nil || generator.phase != .idle {
+                    generator.reset()
                 }
+            }) { sheet in
+                switch sheet {
+                case .settings:
+                    SettingsView(options: $store.options)
+
+                case .generator:
+                    GeneratorFlowView(controller: generator)
+
+                case .picker:
+                    // PHPicker 自带界面：全屏铺开，选完（或取消）回调里关掉 sheet
+                    MultiPhotoPicker(selectionLimit: remainingSlots) { results in
+                        activeSheet = nil
+                        guard !results.isEmpty else { return }
+                        Task { await store.addPhotos(from: results) }
+                    }
+                    .ignoresSafeArea()
+                }
+            }
+            .fullScreenCover(isPresented: $showScanner) {
+                // VisionKit 的扫描界面：自动找边、透视校正、多页连拍
+                DocumentScannerView(onFinish: { images in
+                    showScanner = false
+                    guard !images.isEmpty else { return }
+                    Task { await store.addScannedImages(images) }
+                }, onCancel: {
+                    showScanner = false
+                }, onFailure: { message in
+                    showScanner = false
+                    store.errorMessage = message
+                })
                 .ignoresSafeArea()
             }
-            .confirmationDialog("清空所有照片？", isPresented: $showClearConfirm, titleVisibility: .visible) {
+            .confirmationDialog("清空所有内容？", isPresented: $showClearConfirm, titleVisibility: .visible) {
                 Button("清空", role: .destructive) { store.removeAll() }
                 Button("取消", role: .cancel) {}
             } message: {
-                Text("清空后需要重新选择照片。")
+                Text("清空后需要重新扫描或选择照片。")
             }
             .alert("提示", isPresented: errorBinding) {
                 Button("好", role: .cancel) {}
@@ -75,6 +110,10 @@ struct ContentView: View {
                     ImportingOverlay(progress: store.importProgress)
                 }
             }
+            // 滤镜变化时重新渲染网格缩略图（串行处理，避免卡顿/内存峰值）
+            .task(id: store.options.filter) {
+                await store.refreshDisplayThumbnails()
+            }
         }
         // 用具体类型而不是 .stack 静态成员，确保 iOS 15 SDK 下也能编译
         .navigationViewStyle(StackNavigationViewStyle())
@@ -85,7 +124,9 @@ struct ContentView: View {
     @ViewBuilder
     private var content: some View {
         if store.photos.isEmpty {
-            EmptyStateView(onPick: { showPicker = true })
+            EmptyStateView(onScan: { startScan() },
+                           onPick: { activeSheet = .picker },
+                           showsScanButton: scannerAvailable)
         } else {
             ScrollView {
                 VStack(spacing: 12) {
@@ -96,6 +137,7 @@ struct ContentView: View {
                         ForEach(store.photos) { item in
                             let index = store.photos.firstIndex(of: item) ?? 0
                             PhotoGridCell(item: item,
+                                          image: store.displayImage(for: item),
                                           index: index,
                                           isFirst: index == 0,
                                           isLast: index == store.photos.count - 1,
@@ -124,7 +166,7 @@ struct ContentView: View {
     private var hintBar: some View {
         HStack(spacing: 8) {
             Image(systemName: "hand.tap")
-            Text("长按缩略图可拖动排序，点右下角旋转，点右上角删除")
+            Text("长按缩略图可拖动排序，点右下角旋转，点右上角删除；右上角相机可继续扫描")
             Spacer()
         }
         .font(.caption)
@@ -145,7 +187,7 @@ struct ContentView: View {
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .navigationBarLeading) {
             Button {
-                showSettings = true
+                activeSheet = .settings
             } label: {
                 Image(systemName: "slider.horizontal.3")
             }
@@ -153,8 +195,21 @@ struct ContentView: View {
         }
 
         ToolbarItem(placement: .navigationBarTrailing) {
+            // 相机扫描（模拟器不支持，此时只显示「+ 照片」）
+            if scannerAvailable {
+                Button {
+                    startScan()
+                } label: {
+                    Image(systemName: "camera.viewfinder")
+                }
+                .accessibilityLabel("扫描文档")
+                .disabled(remainingSlots <= 0 || store.isImporting)
+            }
+        }
+
+        ToolbarItem(placement: .navigationBarTrailing) {
             Button {
-                showPicker = true
+                activeSheet = .picker
             } label: {
                 Image(systemName: "plus")
             }
@@ -166,7 +221,7 @@ struct ContentView: View {
             if !store.photos.isEmpty {
                 Menu {
                     Button {
-                        showSettings = true
+                        activeSheet = .settings
                     } label: {
                         Label("页面设置", systemImage: "slider.horizontal.3")
                     }
@@ -219,7 +274,22 @@ struct ContentView: View {
         let sources = store.photos.map { $0.source }
         let options = store.options
         generator.start(sources: sources, options: options)
-        showGenerator = true
+        activeSheet = .generator
+    }
+
+    /// 打开相机扫描（先判断设备支持 + 相机权限）
+    private func startScan() {
+        guard DocumentScanner.isSupported else {
+            store.errorMessage = DocumentScanner.unsupportedHint
+            return
+        }
+        DocumentScanner.requestCameraAccess { granted in
+            if granted {
+                showScanner = true
+            } else {
+                store.errorMessage = DocumentScanner.permissionHint
+            }
+        }
     }
 
     private var errorBinding: Binding<Bool> {

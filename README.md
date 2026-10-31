@@ -1,6 +1,8 @@
-# 照片转 PDF（Photo2PDF）
+# 照片转 PDF / 文档扫描（Photo2PDF v2.0）
 
-把手机相册里的照片快速拼成一份**可以打印、可以分享、可以存档**的 PDF。原生 SwiftUI、**iOS 15.0 起**、中文界面、零第三方依赖、全部在本机处理（照片不上传）。
+拍纸质文档或从相册选照片，拼成一份**可以打印、可以分享、可以存档**的 PDF。原生 SwiftUI、**iOS 15.0 起**、中文界面、零第三方依赖、全部在本机处理（不上传任何内容）。
+
+> **v2.0 新增**：相机扫描（系统 VisionKit，自动找边 + 透视校正 + 多页连拍）、增强滤镜（原图 / 增强 / 黑白 / 灰度，接近全能扫描王）、识别文字（Vision OCR，简体中文 + 英文）。
 
 <p align="center">
   <img src="docs/icon-preview.png" width="160" alt="App 图标">
@@ -30,11 +32,14 @@ iPhone App 必须由 macOS 上的 Xcode 编译，**但你不必拥有 Mac**。Gi
 
 | 分类 | 能力 |
 | --- | --- |
+| 扫描（v2.0） | 相机拍纸质文档：系统 VisionKit 自动找边、透视校正、**多页连拍**，拍完直接进列表；模拟器不支持（真机可用） |
 | 选照片 | 系统 `PHPicker`（iOS 14 起的相册选择器）多选，一次最多 60 张，支持 HEIC / JPEG / PNG，**不需要相册权限**，只把你选中的照片交给 App |
-| 整理 | 缩略图网格、长按拖动排序、右键菜单「前移 / 后移」、单张删除、一键清空 |
-| 旋转 | 单张顺时针旋转 90°（网格里实时预览），旋转结果会写进 PDF |
-| 页面设置 | 纸张 A4 / Letter / 自动；方向 纵向 / 横向 / 自动；页边距 无 / 小 / 标准 / 大；清晰度 150 / 300 / 450 DPI；JPEG 质量 50%–100%；文件名可改 |
-| 生成 | 异步多页 PDF（约 300 DPI 目标）、自动套用 EXIF 方向、等比缩放居中、逐页解码（内存友好）、进度条 + 随时取消 |
+| 滤镜（v2.0） | 原图 / 增强 / 黑白 / 灰度（Core Image）；缩略图与最终 PDF 都按所选滤镜渲染；扫描件默认「增强」 |
+| 整理 | 缩略图网格、长按拖动排序、右键菜单「前移 / 后移」、单张删除、一键清空；扫描页带相机小标记 |
+| 旋转 | 单张顺时针旋转 90°（网格里实时预览），旋转结果会写进 PDF，OCR 前也会自动摆正 |
+| 页面设置 | 纸张 A4 / Letter / 自动；方向 纵向 / 横向 / 自动；页边距 无 / 小 / 标准 / 大；清晰度 150 / 300 / 450 DPI；JPEG 质量 50%–100%；文件名可改；滤镜选择 |
+| 生成 | 异步多页 PDF（约 300 DPI 目标）、自动套用 EXIF 方向、等比缩放居中、逐页解码 + 逐页滤镜（内存友好）、进度条 + 随时取消 |
+| OCR（v2.0） | 结果页「识别文字」：Vision 精确模式，简体中文 + 英文，可复制全部；有进度和取消（v2.0 不写入 PDF 文字层） |
 | 导出 | 系统分享面板（可存「文件」、发微信、AirDrop、打印）+ 一键「存储到“文件”」 |
 | 适配 | 深色模式、iPhone 竖屏 + iPad 四方向、动态字体、VoiceOver 标签 |
 
@@ -45,9 +50,12 @@ iPhone App 必须由 macOS 上的 Xcode 编译，**但你不必拥有 Mac**。Gi
 | **最低系统** | **iOS 15.0**（你的 iOS 15.1 设备可以直接安装、直接运行） |
 | 最高系统 | 可以装到最新版 iOS（本项目没有用任何「只在旧系统才有」的 API） |
 | 设备 | iPhone / iPad 通用（同一份 ipa） |
+| 相机扫描 | `VNDocumentCameraViewController`（VisionKit，**iOS 13.0**）——**模拟器不可用**，真机才支持；界面会先判断 `isSupported`，模拟器上自动隐藏「扫描」按钮 |
+| 滤镜 | Core Image（`CIColorControls` / `CIUnsharpMask` / `CIHighlightShadowAdjust`，iOS 5 起） |
+| OCR | Vision `VNRecognizeTextRequest`（**iOS 13.0**），语言 `zh-Hans` + `en-US` |
 | 相册选择 | 用 `PHPickerViewController`（iOS 14 API）桥接成 `MultiPhotoPicker`，替代 iOS 16 才有的 `PhotosPicker` |
-| 导航 | 用 `NavigationView`（iOS 13 API）+ `.navigationViewStyle(.stack)` 替代 iOS 16 的 `NavigationStack`，iPad 上强制单栏，观感与原来一致 |
-| `#available` 分支 | **0 个** —— 所有 iOS 16+ API 都换成了 iOS 15 可用的等价写法，而不是靠版本判断（这样最不容易漏） |
+| 导航 | 用 `NavigationView`（iOS 13 API）+ `StackNavigationViewStyle()` 替代 iOS 16 的 `NavigationStack`，iPad 上强制单栏，观感与原来一致 |
+| `#available` 分支 | **0 个** —— 所有用到的 API 在 iOS 15.0 都有，不需要版本判断 |
 | 编译警告 | 在 Xcode 15/16 下编译会遇到 `NavigationView`、「单参数 onChange」的**弃用警告**，属正常，不影响编译与运行（工程已关闭「警告视为错误」） |
 
 > 想在更高系统上换成新 API（`NavigationStack` / `PhotosPicker`）？把 `project.yml` 里的 `IPHONEOS_DEPLOYMENT_TARGET` 改回 `16.0`，再用 `#available` 包一层即可 —— 但这样 iOS 15 设备就装不上了。
@@ -58,36 +66,41 @@ iPhone App 必须由 macOS 上的 Xcode 编译，**但你不必拥有 Mac**。Gi
 
 ```
 photo2pdf/ios/
-├── project.yml                      # XcodeGen 工程描述（生成 .xcodeproj）
+├── project.yml                      # XcodeGen 工程描述（生成 .xcodeproj；版本 2.0.0）
 ├── Sources/
 │   ├── App/
 │   │   └── Photo2PDFApp.swift       # @main 入口
 │   ├── Models/
-│   │   ├── PhotoItem.swift          # 一张照片（磁盘路径 + 缩略图 + 旋转状态）
-│   │   └── PDFOptions.swift         # 页面设置（纸张/方向/边距/DPI/质量/文件名）
+│   │   ├── PhotoItem.swift          # 一张照片/扫描页（磁盘路径 + 缩略图 + 旋转 + 来源）
+│   │   └── PDFOptions.swift         # 页面设置（纸张/方向/边距/DPI/质量/文件名/滤镜）
 │   ├── Services/
 │   │   ├── ImageTools.swift         # ImageIO 降采样、EXIF 尺寸、90° 旋转
+│   │   ├── ImageEnhancer.swift      # v2.0 Core Image 滤镜（原图/增强/黑白/灰度）
+│   │   ├── TextRecognizer.swift     # v2.0 Vision OCR（zh-Hans + en-US）
+│   │   ├── OCRController.swift      # v2.0 OCR 流程（actor 串行 + 进度/取消）
 │   │   ├── PhotoFileImporter.swift  # PHPicker 结果 → 磁盘文件（loadFileRepresentation 优先）
-│   │   ├── PhotoStore.swift         # 照片列表：导入/排序/删除/旋转
-│   │   ├── PDFGenerator.swift       # PDF 核心：排版 + 逐页解码 + CGPDFContext 绘制
+│   │   ├── PhotoStore.swift         # 照片列表：导入/扫描/排序/删除/旋转/滤镜缩略图
+│   │   ├── PDFGenerator.swift       # PDF 核心：排版 + 逐页解码 + 滤镜 + CGPDFContext 绘制
 │   │   ├── PDFGenerationController.swift # 生成状态机（进度/取消/结果）
 │   │   └── PDFFileDocument.swift    # 「存储到文件」用的 FileDocument
 │   └── Views/
-│       ├── ContentView.swift        # 主界面：网格 + 工具栏 + 底部按钮
+│       ├── ContentView.swift        # 主界面：网格 + 工具栏（扫描/照片）+ 底部按钮
+│       ├── DocumentScannerView.swift # v2.0 VisionKit 相机扫描桥接 + 权限判断
 │       ├── MultiPhotoPicker.swift   # PHPickerViewController 桥接（iOS 15 兼容多选）
-│       ├── EmptyStateView.swift     # 空状态引导
-│       ├── PhotoGridCell.swift      # 缩略图格子
-│       ├── SettingsView.swift       # 页面设置面板
+│       ├── EmptyStateView.swift     # 空状态引导（扫描 / 从相册选择）
+│       ├── PhotoGridCell.swift      # 缩略图格子（含扫描件标记）
+│       ├── SettingsView.swift       # 页面设置面板（含滤镜选择）
 │       ├── GeneratorFlowView.swift  # 生成进度 / 结果页
-│       ├── ResultView.swift         # 分享与导出
+│       ├── ResultView.swift         # 分享 / 存储到文件 / 识别文字
+│       ├── OCRSheetView.swift       # v2.0 OCR 结果面板（可复制）
 │       └── ShareSheet.swift         # UIActivityViewController 桥接
 ├── Resources/
 │   └── Assets.xcassets/             # AppIcon（1024 单尺寸）+ AccentColor（含暗色变体）
-├── .github/workflows/build-ipa.yml  # 云端编译未签名 ipa
+├── .github/workflows/build-ipa.yml  # 云端编译未签名 ipa（未改动）
 ├── scripts/
 │   ├── make_ipa.sh                  # macOS 本地一键打包
 │   ├── generate_app_icon.py         # 用 Pillow 生成图标（可重跑）
-│   └── self_check.py                # 自检：Swift 语法树 + YAML/JSON 校验
+│   └── self_check.py                # 自检：Swift 语法树 + iOS15 扫描 + 扫描功能检查
 └── docs/
     ├── SELF-CHECK.md                # 最近一次自检报告
     └── icon-preview.png
@@ -224,7 +237,53 @@ MARKETING_VERSION: "1.0.0"
 
 ---
 
-## 八、常见问题
+## 八、扫描 / 滤镜 / 文字识别（v2.0 新增）
+
+### 8.1 怎么扫描
+
+1. 打开 App，点右上角 **相机图标**（或空状态页的「扫描文档」）。**第一次会弹相机授权**，点允许。
+2. 把手机对准纸张，系统会自动识别纸张边缘（取景框变绿/变蓝表示已找到）；也可以手动拖四角调整。
+3. 按快门 → 拍下一张；一张一张往下拍（**多页连拍**）。
+4. 全部拍完点 **保存**：每页已经由系统做好**透视校正**（斜着拍也能拍正），回到 App 后进入缩略图网格。
+5. 之后和照片完全一样：拖动排序、旋转、删除、设置页面、生成 PDF、分享/存「文件」、识别文字。
+
+> 📷 **模拟器不支持相机扫描**（`VNDocumentCameraViewController.isSupported == false`），所以模拟器上「扫描」按钮会自动隐藏，只剩「照片」。真机（你的 iOS 15.1）可用。
+> 如果误点了拒绝相机权限：`设置 → 照片转 PDF → 相机` 打开即可（App 会提示这句话）。
+
+### 8.2 滤镜怎么选（设置页「扫描增强（滤镜）」）
+
+| 滤镜 | 效果 | 适合 |
+| --- | --- | --- |
+| 原图 | 不做任何处理 | 拍照片、拍实物、想保留原始色彩 |
+| **增强**（扫描默认） | 提亮阴影 + 提高对比 + 略降饱和 + 锐化 | 纸质文档、书页、发票、白板 —— 最接近全能扫描王 |
+| 黑白 | 去色 + 强对比 + 锐化 | 纯文字材料，想文件更小、字更黑 |
+| 灰度 | 去色但保留灰阶 | 有印章/照片的材料，不想丢掉层次 |
+
+- 缩略图和最终 PDF **都按当前滤镜渲染**；切换滤镜时网格会逐张刷新（不会一次占用大量内存）。
+- 滤镜是**非破坏性**的：原始扫描图一直原样保存在临时目录，随时可以换回「原图」。
+- 扫描件默认会自动切成「增强」+「页面自动贴合图像」+「边距 0」+ 文件名 `扫描_yyyyMMdd_HHmm`；只有在你还没改过这些设置时才会自动套用，不会覆盖你的自定义。
+
+### 8.3 识别文字（OCR）
+
+1. 生成 PDF 后，在结果页点 **「识别文字（OCR）」**。
+2. 系统会逐页识别（Vision 精确模式，简体中文 + 英文），带进度条，可随时取消。
+3. 识别完弹出文字面板：可以长按选中部分文字，也可以点 **「复制全部」** 一次性复制到剪贴板（会跳过空白页、按页分段）。
+4. 说明：**v2.0 只输出文字，不会把文字层写进 PDF**（PDF 里仍然是图片，只是更清晰）；文字层计划放在 v2.1。
+
+> 识别效果小贴士：用「增强 / 黑白」滤镜、把纸拍正、别让阴影盖住字，识别率高很多。如果一页都没识别到，面板里会给出提示。
+
+### 8.4 权限说明
+
+| 权限 | 什么时候用 | 文案 |
+| --- | --- | --- |
+| **相机**（NSCameraUsageDescription） | 只在点「扫描」时用；不点不申请 | 「需要使用相机拍摄纸质文档来生成 PDF。照片只保存在你的手机里，不会上传到任何服务器。」 |
+| 相册（NSPhotoLibraryUsageDescription） | **实际不需要**——PHPicker 是系统独立进程，只把你勾选的照片交给 App；这里保留用途描述，方便以后接入相册资产 | 「从相册选择照片生成 PDF 时，需要读取你选中的照片。……」 |
+
+本 App **不申请**定位、麦克风、通讯录、通知等任何无关权限，也没有任何网络上传代码。
+
+---
+
+## 九、常见问题
 
 **Q：Actions 跑红了怎么办？**
 点进去看红色步骤的日志，最常见是：
@@ -241,14 +300,24 @@ MARKETING_VERSION: "1.0.0"
 **Q：App 打开闪退？**
 先确认设备是 **iOS 15.0 或更高**（本工程最低 iOS 15.0，iOS 15.1 真机实测目标）；再确认是**这一次**签名安装的（7 天过期会打不开，图标变灰/一点就闪退 → 重新用 Sideloadly 装）。
 
+**Q：点「扫描」没反应 / 按钮不见了？**
+- 模拟器没有相机 → 按钮会自动隐藏（这是设计行为）；
+- 真机上如果按钮不在：确认设备有相机；如果点了没进入扫描，多半是相机权限被拒 → `设置 → 照片转 PDF → 相机` 打开。
+
 **Q：iOS 15 上会不会少功能？**
-不会。iOS 15 只是替换了几处「界面 API 的写法」（`NavigationStack`→`NavigationView`、`PhotosPicker`→`PHPicker`），选照片、排序、旋转、页面设置、生成 PDF、分享、存「文件」全都在。相册选择器还是系统原生的那一个，观感不变。
+不会。iOS 15 只是替换了几处「界面 API 的写法」（`NavigationStack`→`NavigationView`、`PhotosPicker`→`PHPicker`），选照片、扫描、滤镜、排序、旋转、生成 PDF、OCR、分享、存「文件」全都在。扫描和相册选择器都是系统原生界面，观感不变。
+
+**Q：扫描件发灰 / 字不够黑？**
+在设置页把滤镜切到「增强」或「黑白」；再用 300/450 DPI 重新生成 PDF。
+
+**Q：OCR 识别不到中文？**
+v2.0 用 Vision 的 `zh-Hans` + `en-US`；如果系统版本驱动不支持中文，会自动退回英文（至少不出错）。识别效果与拍摄质量关系很大，建议用「增强 / 黑白」滤镜、拍正、避免阴影。
 
 **Q：App 图标下显示「照片转 PDF」，但打开是英文？**
-本项目界面全中文；如果出现英文按钮，那是系统控件（如分享面板、文件选择器）跟随系统语言，属正常。
+本项目界面全中文；如果出现英文按钮，那是系统控件（如分享面板、文件选择器、相机界面）跟随系统语言，属正常。
 
 **Q：照片很多会不会卡死？**
-不会。生成时是**逐张解码、逐页绘制**，任何时刻内存里只有一页的位图；单次最多 60 张，超出会提示。生成中可以随时取消。
+不会。生成时是**逐张解码、逐页滤镜、逐页绘制**，任何时刻内存里只有一页的位图；单次最多 60 张，超出会提示。生成中可以随时取消。
 
 **Q：HEIC 照片会不会转坏？**
 不会。导入时保留原始编码，生成时由 ImageIO 解码并套用 EXIF 方向，再按目标 DPI 降采样。
@@ -258,28 +327,31 @@ MARKETING_VERSION: "1.0.0"
 
 ---
 
-## 九、技术说明（给想改代码的人）
+## 十、技术说明（给想改代码的人）
 
 - **为什么用 CGPDFContext 而不是 `UIGraphicsPDFRenderer`？** 后者整份文档只能有一个页面尺寸，而本 App 的「自动」模式需要每页独立 `MediaBox`。`CGPDFContext` 允许在 `beginPDFPage` 时传入每页的 `kCGPDFContextMediaBox`。
 - **坐标翻转**：PDF 坐标系原点在左下角，绘制前统一 `translate(0, pageHeight) + scale(1, -1)` 翻转成「左上角原点、y 向下」，之后所有排版计算与 SwiftUI 一致。
 - **旋转**：EXIF 方向由 `kCGImageSourceCreateThumbnailWithTransform` 处理；用户手动旋转在绘制时用 CTM 的 `rotate` 完成，不额外生成位图。
 - **内存保护**：`CGImageSourceCreateThumbnailAtIndex` + `kCGImageSourceThumbnailMaxPixelSize` 直接解出「够用」的像素（= 内容区磅值 × DPI / 72，夹在 320…4096 之间，且不超过原图），画完立即释放。
-- **并发**：`PDFRenderer` 是 `actor`，渲染天然跑在后台执行器；`PDFGenerationController` 用 `Task` + `is CancellationError` 管理取消；每页开始前 `Task.checkCancellation()`（Swift 并发在 iOS 13+ 都有，iOS 15 完全可用）。
+- **并发**：`PDFRenderer` / `OCRRunner` 都是 `actor`，渲染/识别天然跑在后台执行器；`PDFGenerationController` / `OCRController` 用 `Task` + `is CancellationError` 管理取消；每页开始前 `Task.checkCancellation()`（Swift 并发在 iOS 15 原生可用）。
+- **扫描（VisionKit，iOS 13）**：`VNDocumentCameraViewController` 自己完成「找边 → 透视校正 → 多页连拍」，`DocumentScannerView` 只是一层 `UIViewControllerRepresentable`；用 `.fullScreenCover` 全屏呈现；`isSupported` 为 false（模拟器）时界面隐藏入口；相机权限由 `AVCaptureDevice` 先判断/请求，避免进去黑屏。
+- **滤镜（Core Image，iOS 5~）**：`ImageEnhancer` 用 `CIFilter(name:)` + KVC 老接口（兼容性最好），滤镜链是 `CIHighlightShadowAdjust → CIColorControls → CIUnsharpMask`；全局复用一个 `CIContext`；缩略图在 480px 上处理并缓存，PDF 在「降采样后的页面尺寸」上处理，都是逐张串行、画完即释放。
+- **OCR（Vision，iOS 13）**：`VNRecognizeTextRequest`（`.accurate`、`zh-Hans` + `en-US`、语言校正），每页先降采样到 2400px、套用当前滤镜、按用户旋转摆正，再识别；识别结果只在面板里展示/复制，不写进 PDF。
 - **iOS 15 兼容（本项目的核心约束）**：全部用 iOS 15 就能用的 API ——
-  - 导航：`NavigationView` + `.navigationViewStyle(.stack)`（iOS 13）代替 `NavigationStack`（iOS 16）；
+  - 导航：`NavigationView` + `StackNavigationViewStyle()`（iOS 13）代替 `NavigationStack`（iOS 16）；
   - 选择照片：`PHPickerViewController`（iOS 14）经 `MultiPhotoPicker` 桥接，代替 `PhotosPicker` / `PhotosPickerItem`（iOS 16）；
   - 分享：`UIActivityViewController` 桥接（`ShareSheet`），不用 `ShareLink`（iOS 16）；
-  - 弹层：去掉 `.presentationDetents`（iOS 16），sheet 用系统默认高度；
-  - 其它：`@StateObject`（14）、`.task`/`Task`（13+）、`fileExporter`（14）、`.tint`/`.background(.ultraThinMaterial)`/`Color(uiColor:)`（15）、`.onChange(of:)` 单参数版（14）都可用。
+  - 弹层：去掉 `.presentationDetents`（iOS 16），sheet 用系统默认高度；扫描用 `.fullScreenCover`（iOS 14）；
+  - 其它：`@StateObject`（14）、`.task(id:)`/`Task`（15/13+）、`fileExporter`（14）、`.tint`/`.background(.ultraThinMaterial)`/`Color(uiColor:)`（15）、`.textSelection`（15）、`.onChange(of:)` 单参数版（14）都可用。
   - **没有 `#available` 分支**：不需要版本判断就不会漏；如果以后要加 iOS 16+ 特性，用 `if #available(iOS 16, *) { ... } else { ... }` 并保留现有写法作为兜底。
   - 代价：Xcode 15/16 会对 `NavigationView`、单参数 `onChange` 报**弃用警告**——只是警告，编译不会失败（工程已设置不把警告当错误）。
 - **iOS 15 相册取图**：`PHPickerConfiguration.preferredAssetRepresentationMode = .current` 保证 HEIC 拿到原始 HEIC；`PhotoFileImporter` 先用 `loadFileRepresentation`（临时 URL 只在回调内有效，所以**在回调里立刻复制**到 App 目录），失败再退回 `loadDataRepresentation`。
 
 ---
 
-## 十、自检
+## 十一、自检
 
-Windows 上没有 Swift 编译器，所以本项目用 **tree-sitter-swift** 做语法树解析（等价于「能不能通过词法/语法分析」），并用 PyYAML / JSON 校验工程与资产文件：
+Windows 上没有 Swift 编译器，所以本项目用 **tree-sitter-swift** 做语法树解析（等价于「能不能通过词法/语法分析」），并用 PyYAML / JSON 校验工程与资产文件，另外对 v2.0 的扫描/滤镜/OCR 做「关键写法」静态检查：
 
 ```powershell
 # 一次性准备（Windows）
@@ -290,22 +362,25 @@ Windows 上没有 Swift 编译器，所以本项目用 **tree-sitter-swift** 做
 .venv\Scripts\python.exe scripts\self_check.py
 ```
 
-自检包含 5 类检查：
+自检包含 6 类检查：
 
-1. **Swift 语法解析**：所有 `.swift` 用 tree-sitter-swift 解析，必须是 0 个 ERROR / MISSING；
+1. **Swift 语法解析**：所有 `.swift` 用 tree-sitter-swift 解析，必须是 0 个 ERROR / MISSING（v2.0 为 22 个文件）；
 2. **iOS 15 兼容扫描**：源码里不允许出现 `NavigationStack`、`PhotosPicker`、`.presentationDetents`、`ShareLink`、
    `ContentUnavailableView` 等 iOS 16+ API，也不允许 iOS 16 才有的 SF Symbol 和双参数 `onChange`；
-3. **工程/资产校验**：`project.yml` 与 workflow 的 YAML 合法性、最低版本必须是 15.0、scheme、AppIcon、AccentColor、
-   `Contents.json` 与图标 PNG（1024²、无 alpha）；
+3. **工程/资产/版本校验**：`project.yml` 与 workflow 的 YAML 合法性、最低版本必须是 15.0、**版本号必须是 2.0.0**、
+   **必须有中文 `NSCameraUsageDescription`**、scheme、AppIcon、AccentColor、`Contents.json` 与图标 PNG（1024²、无 alpha）；
 4. **`#available` 清单**：本项目预期是 **0 处**（改用等价 API 而不是版本判断）；
-5. **风险扫描**：`try!` / `as!` / `fatalError` / TODO。
+5. **风险扫描**：`try!` / `as!` / `fatalError` / TODO；
+6. **扫描功能检查（v2.0）**：逐文件确认 VisionKit 扫描桥接、相机权限判断、Core Image 滤镜、Vision OCR、
+   滤镜缩略图串行渲染、OCR 面板等关键实现都在，并列出新增 API 的最低系统版本表（见报告第 11 节）。
 
-最近一次结果见 [`docs/SELF-CHECK.md`](docs/SELF-CHECK.md)（含「iOS 15 兼容清单」表格）。**注意**：语法检查通过 ≠ 编译通过，类型/API 层面的问题只能在 macOS 的 Xcode 上验证（见自检报告「仍需 macOS 验证」一节）。
+最近一次结果见 [`docs/SELF-CHECK.md`](docs/SELF-CHECK.md)（含「iOS 15 兼容清单」与「扫描功能检查」两节）。**注意**：语法检查通过 ≠ 编译通过，类型/API 层面的问题只能在 macOS 的 Xcode 上验证（见自检报告「仍需 macOS 验证」一节）。
 
 ---
 
-## 十一、许可与免责
+## 十二、许可与免责
 
 - 代码可自由修改自用。图标为本项目用 Pillow 生成，可随意替换。
 - 本项目产出的 ipa 是**未签名**包，仅用于在**你拥有或获授权的设备**上自签安装；请遵守 Apple 的开发者协议，不要用于分发或商业绕过。
+- 扫描识别（OCR）结果仅供个人整理资料使用，识别准确率受拍摄质量与系统版本影响。
 - 「存储到文件」「分享」等系统面板行为由 iOS 版本决定，个别系统版本上文案可能略有差异。

@@ -8,6 +8,16 @@
 
 import UIKit
 
+/// 图片来自哪里：相册选的照片 / 相机扫描的扫描件
+enum PhotoOrigin: String {
+    case photo
+    case scan
+
+    var title: String {
+        self == .scan ? "扫描件" : "照片"
+    }
+}
+
 /// 网格里展示的一张照片
 struct PhotoItem: Identifiable, Equatable {
 
@@ -29,16 +39,21 @@ struct PhotoItem: Identifiable, Equatable {
     /// 用户旋转了多少个 90°（0...3，顺时针）
     private(set) var rotation: Int
 
+    /// 来源：相册 or 相机扫描（只用于界面标记，不影响 PDF 逻辑）
+    let origin: PhotoOrigin
+
     init(id: UUID = UUID(),
          fileURL: URL,
          pixelSize: CGSize,
          thumbnail: UIImage,
-         rotation: Int = 0) {
+         rotation: Int = 0,
+         origin: PhotoOrigin = .photo) {
         self.id = id
         self.fileURL = fileURL
         self.pixelSize = pixelSize
         self.thumbnail = thumbnail
         self.rotation = ((rotation % 4) + 4) % 4
+        self.origin = origin
         self.displayThumbnail = ImageTransformer.rotate(thumbnail, quarters: self.rotation)
     }
 

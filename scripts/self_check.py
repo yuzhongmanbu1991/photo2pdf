@@ -109,6 +109,50 @@ IOS15_SUBSTITUTIONS = [
     ("iOS 17 双参数 onChange", "iOS 14 单参数 onChange(of:) { newValue in }", "iOS 14"),
 ]
 
+# v2.0 新增能力：扫描（VisionKit）/ 滤镜（Core Image）/ OCR（Vision）
+# 每项 = (检查项名称, 文件, 必须出现的关键写法)
+SCAN_MARKERS = [
+    ("相机扫描（VisionKit 桥接）", "Sources/Views/DocumentScannerView.swift",
+     ["import VisionKit", "VNDocumentCameraViewController", "VNDocumentCameraViewControllerDelegate",
+      "isSupported", "documentCameraViewController"]),
+    ("相机权限（AVFoundation）", "Sources/Views/DocumentScannerView.swift",
+     ["AVCaptureDevice.authorizationStatus", "requestAccess"]),
+    ("OCR 识别（Vision）", "Sources/Services/TextRecognizer.swift",
+     ["import Vision", "VNRecognizeTextRequest", ".accurate", "zh-Hans", "recognitionLanguages"]),
+    ("OCR 流程（进度/取消）", "Sources/Services/OCRController.swift",
+     ["OCRRunner", "actor", "Task.checkCancellation", "is CancellationError"]),
+    ("增强滤镜（Core Image）", "Sources/Services/ImageEnhancer.swift",
+     ["import CoreImage", "CIColorControls", "CIUnsharpMask", "CIHighlightShadowAdjust", "CIContext"]),
+    ("扫描入口与全屏呈现", "Sources/Views/ContentView.swift",
+     ["DocumentScannerView(", "startScan()", "fullScreenCover", "addScannedImages"]),
+    ("扫描页进入 PhotoItem 流程", "Sources/Services/PhotoStore.swift",
+     ["addScannedImages", "origin: .scan", "applyScanDefaultsIfNeeded", "scanFileName"]),
+    ("滤镜缩略图（串行渲染）", "Sources/Services/PhotoStore.swift",
+     ["filteredThumbnails", "refreshDisplayThumbnails", "ImageEnhancer.apply"]),
+    ("设置页滤镜选择", "Sources/Views/SettingsView.swift",
+     ["ScanFilter.allCases"]),
+    ("OCR 结果面板（可复制）", "Sources/Views/OCRSheetView.swift",
+     ["UIPasteboard", "textSelection", "复制全部"]),
+    ("PDF 按滤镜渲染", "Sources/Services/PDFGenerator.swift",
+     ["ImageEnhancer.apply", "filter: ScanFilter"]),
+]
+
+# v2.0 新增 API 与最低系统版本（都必须在 iOS 15.0 以内可用）
+SCAN_APIS = [
+    ("VNDocumentCameraViewController / .isSupported", "VisionKit", "iOS 13.0", "相机扫描：自动找边 + 透视校正 + 多页连拍"),
+    ("VNDocumentCameraScan.pageCount / imageOfPage(at:)", "VisionKit", "iOS 13.0", "取每页扫描结果 UIImage"),
+    ("VNRecognizeTextRequest（.accurate）", "Vision", "iOS 13.0", "文字识别；语言 zh-Hans + en-US"),
+    ("VNImageRequestHandler(cgImage:options:)", "Vision", "iOS 11.0", "把 CGImage 交给 Vision"),
+    ("CIFilter：CIColorControls / CIUnsharpMask / CIHighlightShadowAdjust", "Core Image", "iOS 5.0", "增强 / 黑白 / 灰度 滤镜链"),
+    ("CIContext.createCGImage(_:from:)", "Core Image", "iOS 10.0", "滤镜结果转回 CGImage（供 PDF 绘制）"),
+    ("CIImage.transformed(by:) + CIContext", "Core Image", "iOS 5.0", "OCR 前把旋转页摆正（无 UIKit 依赖）"),
+    ("AVCaptureDevice.authorizationStatus / requestAccess", "AVFoundation", "iOS 7.0", "相机权限判断与请求"),
+    ("UIViewControllerRepresentable / .fullScreenCover", "SwiftUI", "iOS 14.0", "全屏呈现系统扫描界面"),
+    (".textSelection(.enabled)", "SwiftUI", "iOS 15.0", "OCR 文字可长按选中复制"),
+    ("UIPasteboard.general.string", "UIKit", "iOS 2.0", "「复制全部」"),
+    (".task(id:)", "SwiftUI", "iOS 15.0", "滤镜变化后重新渲染缩略图"),
+]
+
 checks: list[dict] = []      # 每条：name / status(PASS/WARN/FAIL) / detail
 details: dict[str, list] = {}  # 明细表格数据
 
@@ -262,6 +306,15 @@ def check_project_yml() -> None:
                 problems.append("没有指定 AppIcon")
             if settings.get("ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME") != "AccentColor":
                 problems.append("没有指定 AccentColor")
+            # v2.0：版本号与相机权限文案
+            marketing = str(project_settings.get("MARKETING_VERSION"))
+            if marketing != "2.0.0":
+                problems.append(f"MARKETING_VERSION 不是 2.0.0（实际 {marketing}）")
+            camera_usage = settings.get("INFOPLIST_KEY_NSCameraUsageDescription")
+            if not isinstance(camera_usage, str) or not camera_usage.strip():
+                problems.append("缺少 INFOPLIST_KEY_NSCameraUsageDescription（没有相机权限文案，真机进扫描会闪退）")
+            elif "相机" not in camera_usage:
+                problems.append("NSCameraUsageDescription 不是中文文案")
         schemes = data.get("schemes") or {}
         if "Photo2PDF" not in (schemes if isinstance(schemes, dict) else {}):
             problems.append("缺少 scheme Photo2PDF（xcodebuild -scheme 会失败）")
@@ -278,12 +331,15 @@ def check_project_yml() -> None:
         details["project"] = [
             {"key": "工程名", "value": data.get("name")},
             {"key": "Bundle ID", "value": settings.get("PRODUCT_BUNDLE_IDENTIFIER")},
+            {"key": "版本号", "value": ((data.get("settings") or {}).get("base") or {}).get("MARKETING_VERSION")},
+            {"key": "构建号", "value": ((data.get("settings") or {}).get("base") or {}).get("CURRENT_PROJECT_VERSION")},
             {"key": "最低 iOS", "value": target.get("deploymentTarget")},
             {"key": "IPHONEOS_DEPLOYMENT_TARGET", "value": ((data.get("settings") or {}).get("base") or {}).get("IPHONEOS_DEPLOYMENT_TARGET")},
             {"key": "设备", "value": settings.get("TARGETED_DEVICE_FAMILY")},
             {"key": "AppIcon", "value": settings.get("ASSETCATALOG_COMPILER_APPICON_NAME")},
             {"key": "AccentColor", "value": settings.get("ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME")},
             {"key": "Swift 版本", "value": ((data.get("settings") or {}).get("base") or {}).get("SWIFT_VERSION")},
+            {"key": "相机权限文案", "value": settings.get("INFOPLIST_KEY_NSCameraUsageDescription")},
             {"key": "Scheme", "value": "Photo2PDF"},
         ]
 
@@ -554,6 +610,11 @@ REQUIRED_FILES = [
     "Sources/Views/ResultView.swift",
     "Sources/Views/ShareSheet.swift",
     "Sources/Views/EmptyStateView.swift",
+    "Sources/Views/DocumentScannerView.swift",
+    "Sources/Views/OCRSheetView.swift",
+    "Sources/Services/ImageEnhancer.swift",
+    "Sources/Services/TextRecognizer.swift",
+    "Sources/Services/OCRController.swift",
     "docs/SELF-CHECK.md",
 ]
 
@@ -564,6 +625,41 @@ def check_required_files() -> None:
     missing = [m for m in missing if m != "docs/SELF-CHECK.md"]
     add_check("交付文件清单", "PASS" if not missing else "FAIL",
               "全部存在" if not missing else "缺失：" + "、".join(missing))
+
+
+# --------------------------------------------------------------------------
+# 6. v2.0 扫描 / 滤镜 / OCR 功能检查
+# --------------------------------------------------------------------------
+def check_scan_feature() -> None:
+    rows = []
+    failed = []
+
+    for label, relative_path, markers in SCAN_MARKERS:
+        full_path = os.path.join(BASE_DIR, relative_path)
+        if not os.path.exists(full_path):
+            rows.append({"label": label, "file": relative_path, "status": "FAIL", "note": "文件不存在"})
+            failed.append(label)
+            continue
+
+        with open(full_path, "r", encoding="utf-8") as handle:
+            text = handle.read()
+
+        absent = [marker for marker in markers if marker not in text]
+        if absent:
+            rows.append({"label": label, "file": relative_path, "status": "FAIL",
+                         "note": "缺少：" + "、".join(absent)})
+            failed.append(label)
+        else:
+            rows.append({"label": label, "file": relative_path, "status": "PASS",
+                         "note": f"{len(markers)} 个关键写法齐全"})
+
+    details["scan"] = rows
+    add_check(
+        "扫描 / 滤镜 / OCR 功能检查（v2.0）",
+        "PASS" if not failed else "FAIL",
+        "VisionKit 扫描 + Core Image 滤镜 + Vision OCR 全部就位"
+        if not failed else "缺失：" + "、".join(failed),
+    )
 
 
 # --------------------------------------------------------------------------
@@ -719,46 +815,96 @@ def build_report() -> str:
     lines.append("")
     lines.append("1. **类型检查与 API 可用性**（最重要）：tree-sitter 只做语法解析。重点确认 iOS 15 部署目标下："
                  "`NavigationView` + `StackNavigationViewStyle()`、`MultiPhotoPicker` 的 `UIViewControllerRepresentable` 实现、"
-                 "`PhotoFileImporter` 里的 `withCheckedThrowingContinuation` + `NSItemProvider` 回调是否有类型错误。")
+                 "`PhotoFileImporter` 里的 `withCheckedThrowingContinuation` + `NSItemProvider` 回调、"
+                 "`DocumentScannerView` 的 VisionKit 代理、`OCRController` 的 `actor` + Vision 调用是否有类型错误。")
     lines.append("2. **弃用警告**：`NavigationView`、单参数 `onChange(of:perform:)` 在 Xcode 15/16 会报 deprecated warning——"
                  "只是警告，工程已设置 `SWIFT_TREAT_WARNINGS_AS_ERRORS=NO`，不会让构建失败。")
     lines.append("3. **XcodeGen 生成结果**：`xcodegen generate` 是否成功、`IPHONEOS_DEPLOYMENT_TARGET=15.0` 是否写进工程、"
-                 "`INFOPLIST_KEY_*` 是否被正确写入 Info.plist（生成的 ipa 里 `MinimumOSVersion` 应为 15.0）。")
-    lines.append("4. **iOS 15.1 真机上的相册选择**：PHPicker 以 sheet 内嵌呈现是否正常（导航栏在、能多选、能取消）、"
+                 "`INFOPLIST_KEY_*` 是否被正确写入 Info.plist（ipa 里 `MinimumOSVersion` 应为 15.0，且含 `NSCameraUsageDescription`）。")
+    lines.append("4. **iOS 15.1 真机相机扫描**（VisionKit 在模拟器不可用）：进扫描是否弹相机授权、多页连拍、自动找边/透视校正、"
+                 "取消与失败回调；拍完的页面是否进入网格并带上「扫描」标记。")
+    lines.append("5. **iOS 15.1 真机上的相册选择**：PHPicker 以 sheet 内嵌呈现是否正常（导航栏在、能多选、能取消）、"
                  "HEIC 照片能否正常导入（`.current` 表示形式）、导入后缩略图方向是否正确。")
-    lines.append("5. **`CGPDFContext` + 每页 `MediaBox`**：`kCGPDFContextMediaBox` 传入 `CFData(CGRect)` 的做法需要在真机/模拟器上打开生成的 PDF 确认每页尺寸正确。")
-    lines.append("6. **PDF 内容方向**：坐标翻转（`translate + scale(1, -1)`）后图片是否正立、用户旋转是否顺时针、等比居中是否准确——必须实际打开 PDF 肉眼看。")
-    lines.append("7. **内存峰值**：`Xcode → Debug Navigator → Memory` 观察 60 张 1200 万像素照片的生成过程，确认 iOS 15.1 设备（可能是 4GB 内存）没有被打爆。")
-    lines.append("8. **「存储到文件」/ 分享面板**：iOS 15.1 上 `fileExporter` 与 `UIActivityViewController`（在 sheet 里再弹 sheet）的表现。")
-    lines.append("9. **未签名 ipa 打包**：用 GitHub Actions 实际跑一次，确认 `Payload/Photo2PDF.app` → zip → `.ipa` 能被 Sideloadly 接受。")
+    lines.append("6. **滤镜效果与性能**：四个滤镜（原图/增强/黑白/灰度）在真机上的观感是否接近扫描 App；"
+                 "切换滤镜时缩略图是否逐张刷新、是否卡顿；60 页时内存峰值（Xcode Debug Navigator）。")
+    lines.append("7. **OCR**：iOS 15.1 上 `zh-Hans` 是否被 Vision 接受（识别中文是否正常）、大页面识别耗时、"
+                 "「复制全部」是否真的写进剪贴板。")
+    lines.append("8. **`CGPDFContext` + 每页 `MediaBox`**：`kCGPDFContextMediaBox` 传入 `CFData(CGRect)` 的做法需要在真机/模拟器上打开生成的 PDF 确认每页尺寸正确。")
+    lines.append("9. **PDF 内容方向与滤镜**：坐标翻转（`translate + scale(1, -1)`）后图片是否正立、用户旋转是否顺时针、等比居中是否准确、滤镜后的像素是否进入 PDF——必须实际打开 PDF 肉眼看。")
+    lines.append("10. **「存储到文件」/ 分享面板**：iOS 15.1 上 `fileExporter` 与 `UIActivityViewController`（在 sheet 里再弹 sheet）的表现。")
+    lines.append("11. **未签名 ipa 打包**：用 GitHub Actions 实际跑一次，确认 `Payload/Photo2PDF.app` → zip → `.ipa` 能被 Sideloadly 接受。")
     lines.append("")
 
     lines.append("## 9. 已知风险 / 注意事项")
     lines.append("")
-    lines.append("1. **iOS 15 相册选择器的呈现方式**：PHPickerViewController 放在 SwiftUI `.sheet` 里（而不是 UIKit 全屏 `present`）。"
-                 "这是 iOS 15 社区的标准做法，但在 15.1 上请确认 sheet 是满屏、能正常取消；若发现样式异常，可改成用 `UIApplication` 拿顶层 "
-                 "`UIViewController` 全屏 present（`PhotoFileImporter` / `MultiPhotoPicker` 的接口不用变，只改呈现方式）。")
-    lines.append("2. **loadFileRepresentation 的临时 URL 生命周期**：该 URL 只在回调内有效，代码已「在回调里立刻复制」。"
+    lines.append("1. **VisionKit 模拟器不可用**：`VNDocumentCameraViewController.isSupported` 在模拟器上是 `false`，"
+                 "界面里已经据此隐藏「扫描」按钮，只保留「照片」。真机（iOS 15.1）可用。")
+    lines.append("2. **相机权限**：首次进扫描会弹系统授权；用户拒绝后走 `DocumentScanner.permissionHint` 提示。"
+                 "Info.plist 必须有中文 `NSCameraUsageDescription`，否则真机一进扫描就闪退（project.yml 已配置）。")
+    lines.append("3. **iOS 15 相册选择器的呈现方式**：PHPickerViewController 放在 SwiftUI `.sheet` 里（而不是 UIKit 全屏 `present`）。"
+                 "这是 iOS 15 社区的标准做法，但在 15.1 上请确认 sheet 是满屏、能正常取消。")
+    lines.append("4. **loadFileRepresentation 的临时 URL 生命周期**：该 URL 只在回调内有效，代码已「在回调里立刻复制」。"
                  "若真机上偶发导入失败，会走 `loadDataRepresentation` 兜底（不会丢照片）。")
-    lines.append("3. **每页独立页面尺寸**依赖 `CGContext.beginPDFPage` 的 `kCGPDFContextMediaBox`（CFData 形式的 CGRect）。若某些阅读器忽略该字段，会退化成统一 A4——功能不受影响，只是「自动」尺寸不精确。")
-    lines.append("4. **JPEG 重压缩**：`jpegQuality < 1.0` 时每页会重新编码为 JPEG（体积小）；设为 100% 则走无损内嵌（PDF 明显变大）。这是刻意行为，不是 bug。")
-    lines.append("5. **临时目录**：导入的原图放在 `tmp/Photo2PDF-Sources`，每次启动清空；App 不做持久化，杀掉进程后需要重新选照片。")
-    lines.append("6. **免费 Apple ID 限制**：7 天签名、最多 3 个自签 App、每 7 天最多 10 个 App ID——这些是 Apple 侧限制，与本工程无关。")
-    lines.append("7. **iOS 15.1 是老系统**：Xcode 16 的 iOS 18 SDK 允许部署到 15.0，但真机行为只能以 iOS 15.1 为准；"
-                 "尤其是「存储到文件」面板、分享面板这些系统 UI 的文案/样式会与 iOS 17/18 略有差别。")
+    lines.append("5. **滤镜内存**：Core Image 处理大图时峰值不低。代码已做到「逐页解码 → 滤镜 → JPEG → 立即释放」，"
+                 "缩略图也只在 480px 上做滤镜并串行刷新；若 60 页仍吃紧，可把 PDF 的 `dpi` 降到 300 以下。")
+    lines.append("6. **每页独立页面尺寸**依赖 `CGContext.beginPDFPage` 的 `kCGPDFContextMediaBox`（CFData 形式的 CGRect）。若某些阅读器忽略该字段，会退化成统一 A4——功能不受影响，只是「自动」尺寸不精确。")
+    lines.append("7. **JPEG 重压缩**：`jpegQuality < 1.0` 时每页会重新编码为 JPEG（体积小）；设为 100% 则走无损内嵌（PDF 明显变大）。这是刻意行为，不是 bug。")
+    lines.append("8. **临时目录**：导入的原图放在 `tmp/Photo2PDF-Sources`，每次启动清空；App 不做持久化，杀掉进程后需要重新选照片。")
+    lines.append("9. **免费 Apple ID 限制**：7 天签名、最多 3 个自签 App、每 7 天最多 10 个 App ID——这些是 Apple 侧限制，与本工程无关。")
     lines.append("")
 
     lines.append("## 10. 最可能编译失败的 3 个点（在 macOS 上优先看这里）")
     lines.append("")
-    lines.append("1. **iOS 15 不可用 API 漏网**：最典型的是 `NavigationView`/`NavigationStack` 混用、`PhotosPicker` 残留、"
-                 "`.presentationDetents`、`ShareLink`。本报告第 7.2 节已用脚本扫过（0 处），但仍建议在 Xcode 里 "
-                 "`Product → Build` 后看有没有 `only available in iOS 16.0 or newer` 的报错——有的话直接把该行换成第 7.1 节的写法。")
-    lines.append("2. **CoreFoundation 桥接**：`CGDataConsumer(data: pdfData as CFMutableData)` 与 `kCGPDFContextMediaBox: cgRectData(...)`（`Data as CFData`）。"
-                 "如果 Xcode 报 `cannot convert value of type 'NSMutableData' to type 'CFMutableData'`，把 `PDFGenerator.swift` 里的 `NSMutableData` 换成 "
-                 "`CFDataCreateMutable(nil, 0)`，最后用 `Data(referencing:)`/`(pdfData as NSData) as Data` 取回字节即可（逻辑不变）。")
-    lines.append("3. **PHPicker 桥接的类型细节**：`withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in ... }` 在回调里 resume；"
-                 "若报 `Escaping closure captures non-escaping parameter 'continuation'` 之类，检查是否把 continuation 传进了嵌套函数；"
-                 "`PHPickerConfiguration()` / `preferredAssetRepresentationMode` 均为 iOS 14 API，已核对文档。")
+    lines.append("1. **VisionKit / Vision 的代理与类型**：`DocumentScannerView` 的 Coordinator 要实现 "
+                 "`documentCameraViewController(_:didFinishWith:)` / `...DidCancel` / `...didFailWithError:`；"
+                 "`VNRecognizeTextRequest` 的 `recognitionLevel` 是 `VNRequestTextRecognitionLevel` 枚举（`.accurate`）。"
+                 "这些 API 都是 iOS 13 起，已按文档核对；若 Xcode 报代理方法名不匹配，直接按报错提示的签名改。")
+    lines.append("2. **SwiftUI 类型推断**：新增的 `EmptyStateView` 用 `pickButton` 复用了同一个 Button；"
+                 "如果出现 `some View` 推断失败，把该处拆成显式分支（`if showsScanButton { ... } else { ... }`）即可，"
+                 "业务逻辑不用动。")
+    lines.append("3. **Core Image / CoreFoundation 细节**：`CIFilter(name:)` + KVC 的写法是 iOS 5 起的老接口，最稳；"
+                 "若 `CIContext.createCGImage` 在没有有效 extent 时报错，代码已用 `cropped(to:)` + `extent` 保护。"
+                 "PDF 里的 `NSMutableData as CFMutableData` / `Data as CFData` 若报桥接错误，按上一版报告的兜底写法改即可。")
+    lines.append("")
+
+    lines.append("## 11. 扫描功能检查（v2.0 新增）")
+    lines.append("")
+    lines.append("### 11.1 关键实现检查")
+    lines.append("")
+    lines.append("| 检查项 | 文件 | 结果 | 说明 |")
+    lines.append("| --- | --- | --- | --- |")
+    for row in details.get("scan", []):
+        badge = "✅" if row["status"] == "PASS" else "❌"
+        lines.append(f"| {row['label']} | `{row['file']}` | {badge} | {row['note']} |")
+    lines.append("")
+    lines.append("### 11.2 新增 API 与最低版本（都 ≤ iOS 15.0，不需要 #available）")
+    lines.append("")
+    lines.append("| API | 框架 | 最低版本 | 用途 |")
+    lines.append("| --- | --- | --- | --- |")
+    for api, framework, since, purpose in SCAN_APIS:
+        lines.append(f"| `{api}` | {framework} | {since} | {purpose} |")
+    lines.append("")
+    lines.append("### 11.3 权限与 Info.plist")
+    lines.append("")
+    lines.append("- `NSCameraUsageDescription`（中文，project.yml 的 `INFOPLIST_KEY_NSCameraUsageDescription`）：扫描必须，缺失会闪退。")
+    lines.append("- `NSPhotoLibraryUsageDescription`（中文，保留用途描述）：PHPicker 本身不需要相册权限，这里保留是为了以后接入 PHAsset。")
+    lines.append("- App 只使用相机 + 用户主动选择的照片，不上传任何数据；不申请定位、麦克风、通讯录等无关权限。")
+    lines.append("")
+    lines.append("### 11.4 扫描 → 滤镜 → PDF 的数据流")
+    lines.append("")
+    lines.append("```")
+    lines.append("VNDocumentCameraViewController  →  [UIImage]（已找边/透视校正）")
+    lines.append("        │ addScannedImages()")
+    lines.append("        ▼")
+    lines.append("临时目录 JPEG（原样保存，非破坏性）→ PhotoItem(origin: .scan)")
+    lines.append("        │ 网格缩略图（480px，按当前滤镜渲染，串行 + 缓存）")
+    lines.append("        │ 排序 / 旋转 / 删除（复用 v1 逻辑）")
+    lines.append("        ▼")
+    lines.append("PDFRenderer：逐页解码 → ImageEnhancer 滤镜 → JPEG → CGPDFContext")
+    lines.append("        │ 扫描件默认：页面「自动」贴合 + 边距 0 + 文件名 扫描_yyyyMMdd_HHmm")
+    lines.append("        ▼")
+    lines.append("分享 / 存储到文件 / OCR（Vision 识别文字，可复制）")
+    lines.append("```")
     lines.append("")
 
     lines.append("---")
@@ -785,6 +931,7 @@ def main() -> int:
     check_workflow()
     check_assets()
     check_code_risks()
+    check_scan_feature()
 
     report = build_report()
     if "--no-write" not in sys.argv:
