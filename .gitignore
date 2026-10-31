@@ -1,0 +1,20 @@
+# XcodeGen 生成的工程（用 `xcodegen generate` 随时重建，不需要提交）
+Photo2PDF.xcodeproj/
+*.xcodeproj/
+
+# 构建产物
+build/
+DerivedData/
+*.xcarchive
+*.ipa
+*.dSYM
+
+# 自检用的 Python 环境
+.venv/
+__pycache__/
+*.py[cod]
+
+# macOS / 编辑器
+.DS_Store
+*.swp
+.idea/

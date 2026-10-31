@@ -1,0 +1,89 @@
+# XcodeGen 工程描述文件
+# 用法：在本目录执行 `xcodegen generate`，会生成 Photo2PDF.xcodeproj
+# 生成后的工程可以直接用 Xcode 打开，也可以被 xcodebuild / GitHub Actions 使用。
+#
+# 设计原则：
+#   * 零第三方依赖：只用 Apple 官方 SDK（SwiftUI + PhotosUI + CoreGraphics + ImageIO）
+#   * iOS 15.0 起（用户真机 iOS 15.1），iPhone / iPad 通吃；所有 UI API 都用 iOS 15 可用的写法
+#   * 不写入任何签名信息：云端构建时通过命令行参数关闭签名，产出「未签名 .ipa」
+
+name: Photo2PDF
+
+options:
+  bundleIdPrefix: com.dsh
+  deploymentTarget:
+    # 用户真机是 iOS 15.1，留一点余量取 15.0（iOS 15 全系可装）
+    iOS: "15.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+  developmentLanguage: zh-Hans
+  # 生成工程时使用的 Xcode 版本标记（只是元数据，不影响编译）
+  xcodeVersion: "16.0"
+
+# 工程级构建配置
+settings:
+  base:
+    SWIFT_VERSION: "5.0"                 # 用 Swift 5 语言模式，避免 Swift 6 严格并发检查带来的报错
+    SWIFT_STRICT_CONCURRENCY: minimal    # 并发检查最宽松，保证老版本 Xcode 也能过
+    IPHONEOS_DEPLOYMENT_TARGET: "15.0"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    CODE_SIGN_STYLE: Automatic
+    # 签名相关一律留空：本工程的目标是产出「未签名 ipa」，由用户自己用 Apple ID 重签。
+    # 云端构建时脚本会再显式传 CODE_SIGNING_ALLOWED=NO，所以这里不写死任何证书。
+    DEVELOPMENT_TEAM: ""
+    SWIFT_TREAT_WARNINGS_AS_ERRORS: NO
+    GCC_TREAT_WARNINGS_AS_ERRORS: NO
+    CLANG_ENABLE_MODULES: YES
+    ALWAYS_SEARCH_USER_PATHS: NO
+
+targets:
+  Photo2PDF:
+    type: application
+    platform: iOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: Sources
+      - path: Resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.dsh.photopdf
+        PRODUCT_NAME: Photo2PDF
+        TARGETED_DEVICE_FAMILY: "1,2"          # 1=iPhone, 2=iPad
+        SUPPORTS_MACCATALYST: NO
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        ENABLE_PREVIEWS: YES
+        # 由 Xcode 自动生成 Info.plist，避免手写 plist 出错
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: 照片转PDF
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIStatusBarStyle: UIStatusBarStyleDefault
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
+        # iPhone：仅竖屏；iPad：四方向（iPad 上横屏更实用）
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        INFOPLIST_KEY_UIRequiresFullScreen: NO
+        # 深色模式：不强制指定 UIUserInterfaceStyle，跟随系统（Assets 里的 AccentColor 有暗色变体）
+
+# 显式声明 scheme，保证命令行 `xcodebuild -scheme Photo2PDF` 一定可用
+schemes:
+  Photo2PDF:
+    build:
+      targets:
+        Photo2PDF: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release

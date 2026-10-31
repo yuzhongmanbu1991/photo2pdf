@@ -1,0 +1,147 @@
+name: Build Unsigned IPA
+
+# 说明（给不熟悉 GitHub 的用户）：
+#   1. 把这个工程上传到 GitHub 仓库（本文件要位于仓库根目录的 .github/workflows/ 下）；
+#   2. 打开仓库页面 -> Actions -> 左侧 "Build Unsigned IPA" -> 右侧 "Run workflow"；
+#   3. 等 5~10 分钟，在本次运行的页面底部 "Artifacts" 里下载 Photo2PDF-unsigned-ipa；
+#   4. 解压得到 .ipa，用 Sideloadly / AltStore 用自己的 Apple ID 自签安装。
+#
+# 工作流做的事：在 GitHub 免费提供的 macOS 机器上安装 XcodeGen 生成 Xcode 工程，
+# 用 xcodebuild 归档（关闭签名），再把 .app 打成标准的未签名 .ipa。
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - "v*"
+  workflow_dispatch: # 允许手动点按钮运行
+
+permissions:
+  contents: write # 打 tag 时发布 Release 需要
+
+concurrency:
+  group: build-ipa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build unsigned .ipa
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    env:
+      SCHEME: Photo2PDF
+      PROJECT: Photo2PDF.xcodeproj
+      APP_NAME: Photo2PDF
+      IPA_NAME: Photo2PDF-unsigned.ipa
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 选择已安装的最新 Xcode
+        run: |
+          xcodebuild -version || true
+          for CANDIDATE in $(ls -d /Applications/Xcode*.app 2>/dev/null | sort -r); do
+            if sudo xcode-select -s "$CANDIDATE/Contents/Developer"; then
+              echo "已选择: $CANDIDATE"
+              break
+            fi
+          done
+          xcodebuild -version
+
+      - name: 安装 XcodeGen
+        run: |
+          brew install xcodegen || brew upgrade xcodegen || true
+          xcodegen --version
+
+      - name: 找到工程目录（兼容仓库根 / ios 子目录）
+        id: locate
+        run: |
+          set -e
+          for CANDIDATE in "." "ios" "photo2pdf/ios" "app"; do
+            if [ -f "$CANDIDATE/project.yml" ]; then
+              echo "PROJECT_DIR=$CANDIDATE" >> "$GITHUB_OUTPUT"
+              echo "找到 project.yml 于: $CANDIDATE"
+              exit 0
+            fi
+          done
+          echo "::error::没有找到 project.yml。请确认仓库里包含本工程文件。"
+          exit 1
+
+      - name: 生成 Xcode 工程
+        working-directory: ${{ steps.locate.outputs.PROJECT_DIR }}
+        run: |
+          xcodegen generate --spec project.yml
+          ls -la
+
+      - name: 归档（关闭代码签名）
+        working-directory: ${{ steps.locate.outputs.PROJECT_DIR }}
+        run: |
+          set -o pipefail
+          xcodebuild archive \
+            -project "$PROJECT" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/out/$APP_NAME.xcarchive" \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            | tee "$RUNNER_TEMP/archive.log"
+          echo "---- 归档产物 ----"
+          ls -la "$RUNNER_TEMP/out/$APP_NAME.xcarchive/Products/Applications"
+
+      - name: 打包成未签名 .ipa
+        working-directory: ${{ steps.locate.outputs.PROJECT_DIR }}
+        run: |
+          set -euo pipefail
+          APP_PATH="$RUNNER_TEMP/out/$APP_NAME.xcarchive/Products/Applications/$APP_NAME.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "::error::归档里没有找到 $APP_NAME.app"
+            exit 1
+          fi
+
+          rm -rf "$RUNNER_TEMP/ipa"
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          # 未签名包：Payload/ 里直接放 .app，zip 后把后缀改成 .ipa
+          cp -R "$APP_PATH" "$RUNNER_TEMP/ipa/Payload/"
+          rm -rf "$RUNNER_TEMP/ipa/Payload/$APP_NAME.app/_CodeSignature"
+          # -y：保留符号链接（如果以后加入 Framework，不能把它压成普通文件）
+          ( cd "$RUNNER_TEMP/ipa" && /usr/bin/zip -r -q -y "$IPA_NAME" Payload )
+
+          cp "$RUNNER_TEMP/ipa/$IPA_NAME" "$GITHUB_WORKSPACE/$IPA_NAME"
+          ls -lh "$GITHUB_WORKSPACE/$IPA_NAME"
+
+      - name: 上传 ipa（在运行页面底部 Artifacts 下载）
+        uses: actions/upload-artifact@v4
+        with:
+          name: Photo2PDF-unsigned-ipa
+          path: ${{ github.workspace }}/Photo2PDF-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: 失败时也保留编译日志
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: ${{ runner.temp }}/archive.log
+          if-no-files-found: ignore
+
+      - name: 打 tag 时自动发布到 Release（可选）
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ github.workspace }}/Photo2PDF-unsigned.ipa
+          name: ${{ github.ref_name }}
+          body: |
+            未签名版照片转 PDF（Photo2PDF）。
+            请用 Sideloadly / AltStore 用自己的 Apple ID 自签后安装。
+            免费 Apple ID 签名有效期 7 天，最多同时安装 3 个自签 App。
+          draft: false
+          prerelease: false
